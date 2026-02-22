@@ -4,6 +4,9 @@ Allows for both paper and live account export via Api. Alpaca suggests API as th
 There is no way to export via UI - so API and this easy program is the easiest and best way to get official data from Alpaca! 
 
 # Export and configuration
+install pandas, requests, dateutils and prepare a virtual environment for best practices.
+.requirements and a compiled Windows Executalble version coming soon.
+
 Either fill in config.json with API keys, secret and mode (paper or live) OR 
 run and enter in the keys and instructions in the terminal (if config.json does now contain necessary information)
 
