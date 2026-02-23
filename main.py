@@ -1,11 +1,10 @@
-
+import logging
 import os
 import json
 import csv
 import time
 import pathlib
 from datetime import datetime, timedelta, timezone
-from dateutil.relativedelta import relativedelta
 import requests
 import pandas as pd
 from pathlib import Path
@@ -40,21 +39,22 @@ def get_alpaca_credentials_from_config_or_prompt(config: dict) -> tuple[str, str
     api_key = str(config.get("API_KEY", "") or "").strip()
     api_secret = str(config.get("API_SECRET", "") or "").strip()
 
-    _is_live = input("Exporting from a live account? (Live Trading API) \n"
-                     "Default is LIVE. Press Enter to continue with LIVE. \n"
-                     "Enter 'N' if not. \n"
-                     ": ")
-    if (_is_live == 'N') or (_is_live == 'n'):
+    is_live = input("Exporting from a live account? (Live Trading API) \n"
+                    "Default is LIVE. Press Enter to continue with LIVE. \n"
+                    "Enter 'N' if not. \n"
+                    ": ")
+    if (is_live == 'N') or (is_live == 'n'):
         base_url = str(config.get("API_KEY_PAPER", "https://paper-api.alpaca.markets") or "").strip()
     else:
         base_url = str(config.get("API_KEY_LIVE", "https://api.alpaca.markets") or "").strip()
 
     missing = []
-    if not api_key:
+    if len(api_key) == 0:
         missing.append("APCA_API_KEY_ID")
-    if not api_secret:
+    if len(api_secret) == 0:
         missing.append("APCA_API_SECRET_KEY")
 
+    # Get missing keys if they aren't in the config.json
     if missing:
         print(
             "No or not enough data found in 'config.json' to fetch data. "
@@ -89,7 +89,7 @@ HEADERS = build_alpaca_headers(api_key_id, api_secret_key)
 # Make a data export folder
 def mkdir_export_dir() -> pathlib.Path:
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    p = pathlib.Path(f"/Data/alpaca_paper_export_{stamp}")
+    p = pathlib.Path(f"./Data/alpaca_paper_export_{stamp}")
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -125,6 +125,11 @@ def _robust_get(url, headers, params=None):
         r = requests.get(url, headers=headers, params=params, timeout=30)
         if r.status_code == 429:
             time.sleep(1 + attempt)
+            continue
+        if r.status_code == 404:
+            time.sleep(1 + attempt)
+            logging.error("API keys are not valid. \n"
+                          "Please double-check input or config.json and your website API info.")
             continue
         r.raise_for_status()
         return r
@@ -224,8 +229,8 @@ def get_activities(activity_types=None, after_iso=None, until_iso=None, directio
 
 def get_portfolio_history(period="1A", timeframe="1D", extended_hours="false"):
     params = {
-        "period": period,           # 1D, 1W, 1M, 3M, 6M, 1A, all
-        "timeframe": timeframe,     # 1Min, 5Min, 15Min, 1H, 1D
+        "period": period,  # 1D, 1W, 1M, 3M, 6M, 1A, all
+        "timeframe": timeframe,  # 1Min, 5Min, 15Min, 1H, 1D
         "extended_hours": extended_hours,
     }
     return _robust_get(f"{TRADING_API}/account/portfolio/history", HEADERS, params).json()
@@ -268,7 +273,7 @@ def to_dataframe_safe(items):
 
 def main():
     outdir = mkdir_export_dir()
-    # Time window defaults: last 90 days for orders/activities
+    # Time window defaults: last 180 days for orders/activities
     until_dt = datetime.now(timezone.utc)
     after_dt = until_dt - timedelta(days=180)
     after_iso = after_dt.isoformat()
@@ -290,12 +295,12 @@ def main():
     save_json(outdir / "positions.json", positions)
     _save_csv(outdir / "positions.csv", positions)
 
-    print(f"Fetching orders (status=all, last 90 days)...")
+    print(f"Fetching orders (status=all)...")
     orders = get_orders(after_iso=after_iso, until_iso=until_iso, status="all", limit=500)
     save_json(outdir / "orders.json", orders)
     _save_csv(outdir / "orders.csv", orders)
 
-    print(f"Fetching activities (last 90 days)...")
+    print(f"Fetching activities...")
     activities = get_activities(after_iso=after_iso, until_iso=until_iso, direction="desc", page_limit=100)
     save_json(outdir / "activities.json", activities)
     _save_csv(outdir / "activities.csv", activities)
@@ -317,7 +322,7 @@ def main():
     _save_csv(outdir / "summary.csv", summary)
 
     # Optional: quick human-readable preview via pandas (not required)
-    try:
+    """try:
         print("\n=== Quick preview ===")
         print("Account:")
         print(to_dataframe_safe(account).head(3).to_string(index=False))
@@ -331,7 +336,7 @@ def main():
         print(pd.DataFrame(ph_rows).head(5).to_string(index=False))
     except Exception as e:
         # Keep export resilient even if preview fails
-        print(f"(Preview skipped: {e})")
+        print(f"(Preview skipped: {e})")"""
 
     print(f"\nDone. Files saved in: {outdir.resolve()}")
 
